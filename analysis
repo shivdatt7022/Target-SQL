@@ -1,0 +1,282 @@
+TARGET SQL BUSINESS CASE STUDY
+1.1)	Data type of all columns in the “customers” table.
+SELECT column_name, data_type
+FROM `target.INFORMATION_SCHEMA.COLUMNS` 
+WHERE table_name = 'customers'
+
+ 
+The data type of each column in the customers table is displayed above. This can be done for all tables.
+1.2)	The time range between which the orders were placed.
+select 
+  extract(date from min(order_purchase_timestamp)) first_order_date
+  , extract(date from max(order_purchase_timestamp)) last_order_date
+  , date_diff(extract(date from max(order_purchase_timestamp)),
+              extract(date from min(order_purchase_timestamp)), day) total_number_of_days
+from target.orders
+
+ 
+The orders were placed between the date 2016-09-04 and 2018-10-17, which sums up to 773 days. We can infer that the organization was active in this period. 
+1.3)	The Cities & States of customers who ordered during the given period.
+select 
+  count(distinct c.customer_city) city_count
+  , count(distinct c.customer_state) state_count
+from 
+  target.orders o 
+  inner join target.customers c on o.customer_id = c.customer_id
+ 
+The orders were made by the customers residing in 4119 different cities in 27 different states. 
+Since the orders were placed only from these cities, it would be great to do marketing in other cities in order to expand the business there as well.
+2.1) Growing trend in the no. of orders placed over the past years.
+select 
+  extract(year from order_purchase_timestamp) year_of_purchase
+  , extract(month from order_purchase_timestamp) month_of_purchase
+  , count(*) orders_count
+from target.orders
+group by 
+  extract(year from order_purchase_timestamp)
+  , extract(month from order_purchase_timestamp)
+order by 
+  year_of_purchase
+  , month_of_purchase
+
+ 
+The number of orders placed is increasing year by year. Even though the number of orders placed initially was less, it drastically increased exponentially in the year 2017.It peaked in the beginning of 2018 and in the month of September, it drastically reduced.
+
+2.2) Monthly seasonality in terms of the no. of orders being placed.
+
+select 
+  extract(month from order_purchase_timestamp) month_of_purchase
+  , count(*) orders_count
+from target.orders
+group by 
+  extract(month from order_purchase_timestamp)
+order by 
+  month_of_purchase
+ 
+The number of orders peaked in the month of May, July and August irrespective of the year. Since most of the people order in these months, it signifies that there is a growing demand and the prices can be slightly increased in order to increase profits. 
+2.3) Time of the day, do the Brazilian customers mostly place their orders? 
+(Dawn, Morning, Afternoon or Night)
+select
+  case
+    when extract(time from order_purchase_timestamp) 
+between '00:00:00' and '06:59:59' then 'Dawn'
+    when extract(time from order_purchase_timestamp) 
+       between '07:00:00' and '12:59:59' then 'Mornings'
+    when extract(time from order_purchase_timestamp) 
+       between '13:00:00' and '18:59:59' then 'Afternoon'
+    when extract(time from order_purchase_timestamp) 
+       between '19:00:00' and '23:59:59' then 'Night'
+  end as time_of_day
+  , count(*) number_of_orders
+from
+  target.orders o
+group by time_of_day
+order by number_of_orders desc
+
+ 
+We can conclude that the orders were mostly placed during afternoon and they were least at dawn.
+Since the orders placed in dawn in less, we can give some exciting offers and deals.
+3.1) Month on month no. of orders placed in each state.
+select 
+  customer_state
+  , month
+  , count(*) orders_placed 
+from (
+select 
+  c.customer_state
+  , extract(month from o.order_purchase_timestamp) month
+from 
+  target.orders o
+  inner join target.customers c on o.customer_id = c.customer_id 
+) X
+group by customer_state, month
+order by customer_state, month
+
+ 
+
+In most of the states, the number of orders peaked in the month of July and August.
+But we do not get to see large variations within the state per year.
+3.2) Customers distributed across all the states.
+select
+  customer_state,
+  count(customer_id) customers_per_state
+from 
+  target.customers
+group by
+  customer_state
+order by 
+  customers_per_state
+
+ 
+We can infer that RR, AP are among the states which received lower number of orders, while RJ and SP are on the higher end.
+4.1) The % increase in the cost of orders from year 2017 to 2018 (months between Jan to Aug only).
+select 
+  round((payment_sum - prev_val) / prev_val * 100, 2) percentage_increase from (
+select 
+  extract(year from order_purchase_timestamp) year
+  , sum(p.payment_value) payment_sum
+  , lag(sum(payment_value)) over(order by sum(payment_value)) prev_val
+from 
+  target.orders o
+  inner join target.payments p on o.order_id = p.order_id
+where 
+  extract(date from order_purchase_timestamp) between '2017-01-01' and '2017-08-31'
+  or extract(date from order_purchase_timestamp) between '2018-01-01' and '2018-08-31'
+group by
+  extract(year from order_purchase_timestamp)
+)
+where prev_val is not null
+
+ 
+There is a massive increase in the percentage of price of the orders in 2018 when compared to that of 2017.
+The underlying reasons might be: increase in the price of the products or huge increase in the number of orders, or both.
+4.2) The Total & Average value of order price for each state.
+select 
+  c.customer_state
+  , round(sum(oi.price)) tot_order_price
+  , round(avg(oi.price)) avg_order_price
+from 
+  target.order_items oi
+  left join target.orders o on o.order_id = oi.order_id
+  left join target.customers c on o.customer_id = c.customer_id
+group by 
+  c.customer_state
+
+ 
+Have traversed from order_items table to customer table through orders table. We can see that there is not  much difference in the average price among the states. But in terms of total order price, there is a lot of variation
+4.3) The Total & Average value of order freight for each state
+select 
+  c.customer_state
+  , round(sum(oi.freight_value)) tot_order_freight_value
+  , round(avg(oi.freight_value)) avg_order_freight_value
+from 
+  target.order_items oi
+  left join target.orders o on o.order_id = oi.order_id
+  left join target.customers c on o.customer_id = c.customer_id
+group by 
+  c.customer_state
+
+ 
+The total and average freight value for each state of the customer, who have placed the orders has been generated, with the state SP having the highest total freight value. Average value lies between 15 to 43
+5.1) The no. of days taken to deliver each order from the order’s purchase date as delivery time and the difference (in days) between the estimated & actual delivery date of an order.
+select 
+  *
+  , date_diff(delivered_date, ordered_date, day) delivery_time
+  , date_diff(estimated_date, delivered_date, day) days_gap_ordered_delivered
+from(
+select 
+  order_id
+  , customer_id
+  , extract(date from order_purchase_timestamp) ordered_date
+  , extract(date from order_delivered_carrier_date) delivered_date
+  , extract(date from order_estimated_delivery_date) estimated_date
+from 
+  target.orders
+) x
+where 
+  delivered_date is not null
+order by
+  ordered_date
+
+ 
+For orders with id : 2d858f451373b04fb5c984a1cc2defaf and 2d858f451373b04fb5c984a1cc2defaf, the order_delivered_carrier_date is null even though the order status is ‘delivered’. 
+There are 336 orders which were delivered after the estimated delivery time and 3 orders were delivered after 100 days. We would want to minimize these numbers.
+
+5.2) The top 5 states with the highest & lowest average freight value.
+select * from (
+select 
+  c.customer_state
+  , round(avg(oi.freight_value),2) avrg_freight_val
+  , row_number() over(order by round(avg(oi.freight_value),2)) series
+from
+  target.order_items oi
+  inner join target.orders o on o.order_id = oi.order_id
+  inner join target.customers c on c.customer_id = o.customer_id
+group by
+  c.customer_state
+order by
+  avrg_freight_val
+) X
+where
+  series between 1 and 5 
+  or series between 23 and 27
+
+ 
+The rows between 1 and 5 have the states with lowest average freight value and the rows between 6 and 10 have the highest average freight value. The order price in the bottom states might increase due to the high freight values.
+5.3) The top 5 states with the highest & lowest average delivery time.
+select * from (
+select
+  customer_state
+  , round(avg(date_diff(delivered_date, ordered_date, day)),2) avg_delivery_time
+  , row_number() over(order by round(avg(date_diff(delivered_date, ordered_date, day)),2)) series
+from (
+select 
+  c.customer_state
+  , extract(date from order_purchase_timestamp) ordered_date
+  , extract(date from order_delivered_carrier_date) delivered_date
+from 
+  target.orders o
+  inner join target.customers c on o.customer_id = c.customer_id
+) X
+group by 
+  customer_state
+) Y
+where 
+  series between 1 and 5
+  or series between 23 and 27
+
+ 
+The rows between 1 and 5 have the states with lowest average delivery time and the rows between 6 and 10 have the highest average delivery time. The difference between the two groups is very less. 
+5.4) The top 5 states where the order delivery is really fast as compared to the estimated date of delivery.
+select
+  customer_state
+  , round(avg(date_diff(estimated_date, delivered_date, day)),2) avg_days_gap_ordered_delivered
+from(
+select 
+  customer_state
+  , extract(date from order_delivered_carrier_date) delivered_date
+  , extract(date from order_estimated_delivery_date) estimated_date
+from 
+  target.orders o
+  inner join target.customers c on c.customer_id = o.customer_id
+) x
+where 
+  delivered_date is not null
+group by
+  customer_state
+order by
+  avg_days_gap_ordered_delivered desc
+limit 5
+ 
+These are the states where the order was delivered to the customer way before the estimated delivery date. Since it is taking very less time to deliver, the estimated delivery date can be reduced, so that the customer does not cancel the order hoping that it takes too long for it to arrive.
+6.1) Month on month no. of orders placed using different payment types.
+select
+  extract(month from o.order_purchase_timestamp) month
+  , p.payment_type
+  , count(o.order_purchase_timestamp) num_of_orders
+from
+  target.orders o
+  inner join target.payments p on o.order_id = p.order_id
+group by
+  extract(month from o.order_purchase_timestamp)
+  , payment_type
+order by 
+  month
+  , payment_type
+ 
+We can see that the number of orders placed through credit card is more irrespective on the month. Making a deal with any particular credit card company will be beneficial.
+6.2) The no. of orders placed on the basis of the payment instalments that have been paid.
+select 
+  payment_installments
+  , count(order_id) num_of_orders
+from 
+  target.payments 
+where
+  payment_value != 0
+  and payment_installments != 0
+group by 
+  payment_installments
+order by
+  payment_installments
+ 
+The number of orders having lesser payment installations is more when compared to the more payment installations
